@@ -1,62 +1,19 @@
 use std::net::SocketAddr;
 
-use axum::{
-    Json, Router,
-    routing::{get, post},
-};
-use serde::{Deserialize, Serialize};
 use tokio::signal;
-use tracing::{info, instrument};
+use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
-/// Incoming telemetry frame ingested from concurrent traffic streams.
-#[derive(Debug, Deserialize)]
-struct IngestionPayload {
-    event_id: String,
-    metric_signature: String,
-    data_points: Vec<f64>,
-}
+mod cache;
+mod config;
+mod events;
+mod grpc;
+mod http;
 
-/// Acknowledgement returned to the client after a frame is processed.
-#[derive(Debug, Serialize)]
-struct SystemResponse {
-    status: String,
-    processed_elements: usize,
-}
-
-/// Lightweight payload served to orchestrator liveness/readiness probes.
-#[derive(Debug, Serialize)]
-struct HealthResponse {
-    status: &'static str,
-}
-
-#[instrument(skip(payload), fields(event_id = %payload.event_id))]
-async fn ingest_pipeline_handler(Json(payload): Json<IngestionPayload>) -> Json<SystemResponse> {
-    // Non-blocking asynchronous ingestion processing.
-    let element_count = payload.data_points.len();
-
-    info!(
-        signature = %payload.metric_signature,
-        processed_elements = element_count,
-        "telemetry frame ingested"
-    );
-
-    Json(SystemResponse {
-        status: "ACK_RECEIVED_SUCCESS".to_string(),
-        processed_elements: element_count,
-    })
-}
-
-/// Health endpoint consumed by Kubernetes liveness/readiness probes.
-async fn health_handler() -> Json<HealthResponse> {
-    Json(HealthResponse { status: "ok" })
-}
-
-fn build_router() -> Router {
-    Router::new()
-        .route("/api/v1/telemetry", post(ingest_pipeline_handler))
-        .route("/healthz", get(health_handler))
-}
+use cache::Cache;
+use config::Config;
+use events::EventBus;
+use http::AppState;
 
 #[tokio::main]
 async fn main() {
@@ -66,25 +23,61 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let app = build_router();
+    let cfg = Config::from_env();
 
-    // Bind address is configurable so the same binary runs locally and in a
-    // container. Defaults to 0.0.0.0:8080 so it is reachable inside a pod.
-    let address: SocketAddr = std::env::var("BIND_ADDR")
-        .unwrap_or_else(|_| "0.0.0.0:8080".to_string())
+    // Connect optional integrations. Each degrades gracefully when absent.
+    let cache = Cache::connect(cfg.redis_url.as_deref(), cfg.redis_cluster).await;
+    let events = EventBus::connect(&cfg.kafka_bootstrap, &cfg.kafka_topic).await;
+
+    let state = AppState {
+        cache: cache.clone(),
+        events: events.clone(),
+        dedupe_ttl_secs: cfg.dedupe_ttl_secs,
+    };
+
+    let http_addr: SocketAddr = cfg
+        .bind_addr
         .parse()
         .expect("BIND_ADDR must be a valid socket address");
+    let grpc_addr: SocketAddr = cfg
+        .grpc_addr
+        .parse()
+        .expect("GRPC_ADDR must be a valid socket address");
 
-    let listener = tokio::net::TcpListener::bind(address)
+    let listener = tokio::net::TcpListener::bind(http_addr)
         .await
-        .expect("failed to bind listener");
+        .expect("failed to bind HTTP listener");
 
-    info!(%address, "DEV_ENGINE::CORE -> asynchronous high-throughput engine listening");
+    info!(
+        %http_addr,
+        %grpc_addr,
+        "DEV_ENGINE::CORE -> asynchronous high-throughput engine listening (REST + gRPC)"
+    );
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("server error");
+    let http_server =
+        axum::serve(listener, http::router(state)).with_graceful_shutdown(shutdown_signal());
+
+    let grpc_service = grpc::service(cache, events, cfg.dedupe_ttl_secs);
+    let grpc_server = tonic::transport::Server::builder()
+        .add_service(grpc_service)
+        .serve_with_shutdown(grpc_addr, shutdown_signal());
+
+    // Run both transports concurrently; the first to stop (e.g. on shutdown
+    // signal) cancels the other.
+    tokio::select! {
+        result = http_server => {
+            if let Err(e) = result {
+                error!(error = %e, "HTTP server error");
+            }
+        }
+        result = grpc_server => {
+            if let Err(e) = result {
+                error!(error = %e, "gRPC server error");
+            }
+        }
+    }
+
+    info!("engine stopped");
 }
 
 /// Resolves when the process receives SIGINT (Ctrl+C) or SIGTERM, enabling

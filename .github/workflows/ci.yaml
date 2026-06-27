@@ -24,6 +24,9 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Cache cargo artifacts
         uses: actions/cache@v5
         with:
@@ -44,3 +47,23 @@ jobs:
 
       - name: Test
         run: cargo test
+
+  node-consumer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/node-consumer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --omit=dev --no-audit --no-fund
+
+      - name: Syntax check
+        run: npm run check

@@ -1,0 +1,13 @@
+{
+  "name": "loadtest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Autocannon-based load generator for the telemetry ingestion endpoint (no k6 install required).",
+  "scripts": {
+    "load": "node autocannon-run.js"
+  },
+  "dependencies": {
+    "autocannon": "^8.0.0"
+  }
+}

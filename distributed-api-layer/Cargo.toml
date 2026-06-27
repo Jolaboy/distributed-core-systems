@@ -13,6 +13,19 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tonic = "0.12"
+prost = "0.13"
+futures = "0.3"
+redis = { version = "0.27", features = [
+    "tokio-comp",
+    "connection-manager",
+    "cluster-async",
+] }
+rskafka = "0.5"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[build-dependencies]
+tonic-build = "0.12"
 
 # Tuned for the <45MB operational footprint and high request throughput.
 [profile.release]

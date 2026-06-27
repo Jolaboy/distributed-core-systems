@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package telemetry.v1;
+
+// A single telemetry frame ingested from concurrent traffic streams.
+message TelemetryFrame {
+  string event_id = 1;
+  string metric_signature = 2;
+  repeated double data_points = 3;
+}
+
+// Acknowledgement returned after a frame is processed.
+message Ack {
+  string status = 1;
+  uint64 processed_elements = 2;
+  bool duplicate = 3;
+}
+
+// Summary returned after a client-streaming ingestion completes.
+message StreamSummary {
+  uint64 frames = 1;
+  uint64 processed_elements = 2;
+}
+
+service TelemetryService {
+  // Unary ingestion of a single frame.
+  rpc Ingest(TelemetryFrame) returns (Ack);
+
+  // Memory-efficient client-streaming ingestion: frames are processed one at a
+  // time as they arrive, without buffering the whole stream.
+  rpc IngestStream(stream TelemetryFrame) returns (StreamSummary);
+}

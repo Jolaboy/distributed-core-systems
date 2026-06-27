@@ -1,0 +1,18 @@
+{
+  "name": "node-consumer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node.js downstream consumer: reads telemetry events from Kafka and forwards frames to the Rust gRPC service.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node --check src/index.js && node --check src/grpc-client.js"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.12.2",
+    "@grpc/proto-loader": "^0.7.13",
+    "fastify": "^5.1.0",
+    "kafkajs": "^2.2.4"
+  }
+}

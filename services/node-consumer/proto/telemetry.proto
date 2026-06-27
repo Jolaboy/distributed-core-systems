@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package telemetry.v1;
+
+// A single telemetry frame ingested from concurrent traffic streams.
+// NOTE: keep in sync with distributed-api-layer/proto/telemetry.proto.
+message TelemetryFrame {
+  string event_id = 1;
+  string metric_signature = 2;
+  repeated double data_points = 3;
+}
+
+message Ack {
+  string status = 1;
+  uint64 processed_elements = 2;
+  bool duplicate = 3;
+}
+
+message StreamSummary {
+  uint64 frames = 1;
+  uint64 processed_elements = 2;
+}
+
+service TelemetryService {
+  rpc Ingest(TelemetryFrame) returns (Ack);
+  rpc IngestStream(stream TelemetryFrame) returns (StreamSummary);
+}

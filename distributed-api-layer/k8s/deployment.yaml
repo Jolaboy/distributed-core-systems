@@ -18,20 +18,33 @@ spec:
         - name: api-layer
           image: jolaboy/distributed-api-layer:latest
           ports:
-            - containerPort: 8080
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 50051
           env:
             - name: BIND_ADDR
               value: "0.0.0.0:8080"
+            - name: GRPC_ADDR
+              value: "0.0.0.0:50051"
             - name: RUST_LOG
               value: "info"
+            # Optional integrations — point these at in-cluster services.
+            - name: REDIS_URL
+              value: "redis://redis:6379"
+            - name: KAFKA_BOOTSTRAP
+              value: "kafka:9092"
+            - name: KAFKA_TOPIC
+              value: "telemetry.frames"
           resources:
             requests:
               cpu: "100m"
-              memory: "32Mi"
+              memory: "64Mi"
             limits:
               cpu: "500m"
-              # Enforce the <45MB operational ceiling at the orchestrator level.
-              memory: "45Mi"
+              # The <45MB target applies to the lean REST-only profile; the full
+              # stack (gRPC + Kafka + Redis clients) is given headroom here.
+              memory: "128Mi"
           livenessProbe:
             httpGet:
               path: /healthz
@@ -59,4 +72,8 @@ spec:
     - name: http
       port: 80
       targetPort: 8080
+      protocol: TCP
+    - name: grpc
+      port: 50051
+      targetPort: 50051
       protocol: TCP
