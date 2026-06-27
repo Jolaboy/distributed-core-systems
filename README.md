@@ -2,21 +2,40 @@
 
 An asynchronous microservice pipeline compiled in native Rust. Utilizing the multi-threaded `Tokio` runtime alongside the `Axum` routing framework, this service processes intensive metrics ingestion under a low memory footprint ($< 45\text{MB}$ operational ceiling) with ultra-high request throughput.
 
-## 📐 Architecture Topology
+## Architecture Topology
 
 ```mermaid
 graph LR
-    A[Concurrent Traffic Ingress] -->|JSON Payloads via TCP| B[Native Socket Listener]
-    B -->|Async Spawning Engine| C[Tokio Thread Worker Pool]
-    C -->|Zero-Allocation Router| D[Axum Ingestion Framework]
-    D -->|Serde Zero-Copy Matrix| E[JSON Processing Handler]
-    E -->|Status ACK Payload| F[Client Ingress Endpoint Return]
+    classDef ingress fill:#0b3d2e,stroke:#34d399,stroke-width:2px,color:#ecfdf5;
+    classDef runtime fill:#1e1e2f,stroke:#f59e0b,stroke-width:2px,color:#fef3c7;
+    classDef framework fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#e0f2fe;
+    classDef egress fill:#3b0764,stroke:#a855f7,stroke-width:2px,color:#f5e8ff;
 
-    style C fill:#1e1e2f,stroke:#f59e0b,stroke-width:2px
-    style E fill:#0f172a,stroke:#3b82f6,stroke-width:2px
+    A([Concurrent Traffic Ingress]):::ingress
+    F([Client ACK Response]):::egress
+
+    subgraph TOKIO["⚙️ Tokio Async Runtime"]
+        direction LR
+        B["Native Socket Listener<br/>0.0.0.0:8080"]:::runtime
+        C["Tokio Worker Pool<br/>multi-threaded"]:::runtime
+    end
+
+    subgraph AXUM["🌐 Axum Service Layer"]
+        direction LR
+        D["Router<br/>/api/v1/telemetry · /healthz"]:::framework
+        E["Serde JSON Handler"]:::framework
+    end
+
+    A -->|JSON payloads via TCP| B
+    B -->|async spawn| C
+    C -->|zero-alloc routing| D
+    D -->|zero-copy deserialize| E
+    E -->|status ACK payload| F
+
+    linkStyle default stroke:#94a3b8,stroke-width:2px;
 ```
 
-## 🛠️ System Stack & Core Dependencies
+## System Stack & Core Dependencies
 
 | Layer | Technology |
 | --- | --- |
@@ -35,7 +54,7 @@ graph LR
 | `POST` | `/api/v1/telemetry` | Ingests a JSON telemetry frame and returns an ACK. |
 | `GET` | `/healthz` | Liveness/readiness probe for orchestrators. |
 
-## 📂 Repository Structure
+## Repository Structure
 
 ```text
 distributed-core-systems/
@@ -55,7 +74,7 @@ distributed-core-systems/
             └── ci.yaml             # fmt, clippy, build & test pipeline
 ```
 
-## 🚀 Local Compilation & Run
+## Local Compilation & Run
 
 1. **Verify the toolchain** (Rust 1.85+):
 
@@ -83,7 +102,7 @@ distributed-core-systems/
    cargo build --release
    ```
 
-## 🔬 Endpoint Testing
+## Endpoint Testing
 
 Send a verification frame with `curl`:
 
@@ -106,7 +125,7 @@ curl http://127.0.0.1:8080/healthz
 # {"status":"ok"}
 ```
 
-## 🐳 Container Build
+## Container Build
 
 A multi-stage `Dockerfile` produces a minimal, rootless [distroless](https://github.com/GoogleContainerTools/distroless) image that complements the sub-45MB footprint goal:
 
@@ -116,7 +135,7 @@ docker build -t jolaboy/distributed-api-layer:latest .
 docker run --rm -p 8080:8080 jolaboy/distributed-api-layer:latest
 ```
 
-## ☸️ Infrastructure-as-Code & Kubernetes
+## Infrastructure-as-Code & Kubernetes
 
 Mock configuration files demonstrate the deployment topology:
 
@@ -134,7 +153,6 @@ Mock configuration files demonstrate the deployment topology:
   kubectl apply -f distributed-api-layer/k8s/deployment.yaml
   ```
 
-## 🔁 Continuous Integration
+## Continuous Integration
 
 [`.github/workflows/ci.yaml`](distributed-api-layer/.github/workflows/ci.yaml) runs formatting checks, Clippy lints (warnings treated as errors), a release build, and the test suite on every push and pull request to `main`.
-
