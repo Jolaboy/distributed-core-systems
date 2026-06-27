@@ -1,0 +1,8 @@
+target/
+.git/
+.github/
+infra/
+k8s/
+**/*.md
+Dockerfile
+.dockerignore
